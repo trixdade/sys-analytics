@@ -30,7 +30,12 @@ def list_images(root: Path) -> list[Path]:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--src", type=Path, default=Path("data/source_images"))
+    p.add_argument(
+        "--src",
+        type=Path,
+        default=Path("data/source_images/faces"),
+        help="Directory with source still images (searched recursively).",
+    )
     p.add_argument("--out", type=Path, default=Path("data/synthetic"))
     p.add_argument("--n", type=int, default=50,
                    help="Total number of clips to generate")

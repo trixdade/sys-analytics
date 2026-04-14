@@ -17,6 +17,7 @@ affine alignment, and "reals" should have materially higher residuals.
 """
 from __future__ import annotations
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -25,10 +26,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from src.classical.affine_residual import clip_pair_residuals
-from src.classical.features import FEATURE_NAMES, clip_features
 from src.data.synthetic import (
     AffineTrajectoryConfig,
+    load_image,
     render_fake_clip,
     sample_trajectory,
 )
@@ -37,6 +37,8 @@ from src.utils.seeds import seed_everything
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FACES_DIR = ROOT / "data" / "source_images" / "faces"
+PROCEDURAL_DIR = ROOT / "data" / "source_images" / "procedural"
 
 
 # ---------------------------------------------------------------------------
@@ -172,46 +174,72 @@ def clean_dir(p: Path) -> None:
         p.mkdir(parents=True, exist_ok=True)
 
 
+def _resolve_source_images(
+    use_faces: bool, n_sources: int, image_size: int
+) -> list[np.ndarray]:
+    """Either load real face images from disk, or generate procedural ones."""
+    if use_faces:
+        if not FACES_DIR.exists() or not any(FACES_DIR.glob("*")):
+            raise SystemExit(
+                f"No faces in {FACES_DIR}. "
+                "Run `python -m scripts.download_faces` first, or pass --procedural."
+            )
+        paths = sorted(
+            p for p in FACES_DIR.iterdir()
+            if p.suffix.lower() in {".jpg", ".jpeg", ".png"}
+        )
+        imgs = [load_image(p, max_side=image_size) for p in paths]
+        print(f"       using {len(imgs)} real face images from {FACES_DIR}")
+        return imgs
+    PROCEDURAL_DIR.mkdir(parents=True, exist_ok=True)
+    clean_dir(PROCEDURAL_DIR)
+    imgs = []
+    for i in range(n_sources):
+        img = make_source_image(seed=100 + i, size=image_size)
+        cv2.imwrite(str(PROCEDURAL_DIR / f"src_{i:03d}.png"), img)
+        imgs.append(img)
+    print(f"       using {n_sources} procedural images")
+    return imgs
+
+
 def main(
-    n_sources: int = 8,
     n_fake: int = 16,
     n_real: int = 16,
     duration: float = 2.0,
     fps: int = 20,
     image_size: int = 320,
+    use_faces: bool = True,
 ) -> int:
     seed_everything(0)
     rng = np.random.default_rng(0)
 
-    src_dir = ROOT / "data" / "source_images"
     fake_dir = ROOT / "data" / "synthetic"
     real_dir = ROOT / "data" / "real" / "raw"
     feat_path = ROOT / "data" / "features" / "smoke.npz"
 
-    clean_dir(src_dir)
     clean_dir(fake_dir)
     clean_dir(real_dir)
     feat_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 1. Make procedural source images
-    print(f"[1/5] creating {n_sources} source images -> {src_dir}")
-    for i in range(n_sources):
-        img = make_source_image(seed=100 + i, size=image_size)
-        cv2.imwrite(str(src_dir / f"src_{i:03d}.png"), img)
+    # 1. Collect source images (real faces or procedural fallback)
+    print(f"[1/5] preparing source images "
+          f"(use_faces={use_faces})")
+    sources = _resolve_source_images(use_faces, n_sources=8, image_size=image_size)
+    n_sources = len(sources)
 
     cfg = AffineTrajectoryConfig(duration_s=duration, fps=fps)
 
     # 2. Fakes
     print(f"[2/5] rendering {n_fake} fake clips -> {fake_dir}")
     for i in range(n_fake):
-        img = cv2.imread(str(src_dir / f"src_{i % n_sources:03d}.png"))
+        img = sources[i % n_sources]
         frames, _ = render_fake_clip(img, cfg=cfg, rng=rng)
         write_video(fake_dir / f"fake_{i:03d}.mp4", frames, fps=fps)
 
     # 3. Real-like
     print(f"[3/5] rendering {n_real} real-like clips -> {real_dir}")
     for i in range(n_real):
-        img = cv2.imread(str(src_dir / f"src_{i % n_sources:03d}.png"))
+        img = sources[i % n_sources]
         frames = render_real_like_clip(img, cfg, rng)
         write_video(real_dir / f"real_{i:03d}.mp4", frames, fps=fps)
 
@@ -257,4 +285,19 @@ def main(
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--procedural",
+        action="store_true",
+        help="Use procedural source images instead of real faces",
+    )
+    parser.add_argument("--n-fake", type=int, default=16)
+    parser.add_argument("--n-real", type=int, default=16)
+    args = parser.parse_args()
+    sys.exit(
+        main(
+            n_fake=args.n_fake,
+            n_real=args.n_real,
+            use_faces=not args.procedural,
+        )
+    )
