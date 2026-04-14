@@ -24,6 +24,8 @@ runs/
 *.avi
 *.mov
 *.mkv
+# ...except explicitly-checked-in sample assets
+!samples/*.mp4
 *.pkl
 *.npz
 
