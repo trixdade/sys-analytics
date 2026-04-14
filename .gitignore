@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Data & artifacts
+data/real/raw/*
+!data/real/raw/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+data/source_images/*
+!data/source_images/.gitkeep
+data/features/*
+!data/features/.gitkeep
+checkpoints/
+runs/
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.pkl
+*.npz
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
